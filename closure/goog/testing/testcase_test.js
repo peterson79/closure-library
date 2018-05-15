@@ -20,12 +20,14 @@ goog.require('goog.Timer');
 goog.require('goog.functions');
 goog.require('goog.string');
 goog.require('goog.testing.ExpectedFailures');
+goog.require('goog.testing.FunctionMock');
 goog.require('goog.testing.JsUnitException');
 goog.require('goog.testing.MethodMock');
 goog.require('goog.testing.MockRandom');
 goog.require('goog.testing.PropertyReplacer');
 goog.require('goog.testing.TestCase');
 goog.require('goog.testing.jsunit');
+goog.require('goog.userAgent');
 
 
 // Dual of fail().
@@ -55,7 +57,7 @@ var okGoogPromise = function() {
 
 // goog.Promise-based equivalent of fail().
 var failGoogPromise = function() {
-  return goog.Promise.reject(null);
+  return goog.Promise.reject(new Error());
 };
 
 // Native Promise-based test that returns promise which never resolves.
@@ -92,6 +94,28 @@ function testEmptyTestCase() {
   assertEquals(0, result.runCount);
   assertEquals(0, result.successCount);
   assertEquals(0, result.errors.length);
+}
+
+function testCompletedCallbacks() {
+  var callback = goog.testing.FunctionMock('completed');
+  var testCase = new goog.testing.TestCase();
+
+  testCase.addCompletedCallback(callback);
+  testCase.addCompletedCallback(callback);
+
+  callback().$times(2);
+
+  callback.$replay();
+  testCase.runTests();
+  callback.$verify();
+  callback.$reset();
+
+  assertTrue(testCase.isSuccess());
+
+  // Executing a second time should not remember the callback.
+  callback.$replay();
+  testCase.runTests();
+  callback.$verify();
 }
 
 function testEmptyTestCaseReturningPromise() {
@@ -157,6 +181,74 @@ function testTestCaseReturningPromise_PromiseResolve() {
   });
 }
 
+function testTestCase_DoubleFailure() {
+  var doneCount = 0;
+  var testCase = new goog.testing.TestCase();
+
+  testCase.setTestDoneCallback(function() {
+    doneCount++;
+  });
+
+  testCase.addNewTest('foo', fail, null, [{tearDown: fail}]);
+  testCase.runTests();
+  assertFalse(testCase.isSuccess());
+  var result = testCase.getResult();
+  assertTrue(result.complete);
+  assertEquals(1, result.totalCount);
+  assertEquals(1, result.runCount);
+  assertEquals(0, result.successCount);
+  assertEquals(2, result.errors.length);
+
+  assertEquals('testDone must be called exactly once.', 1, doneCount);
+
+  // Make sure we strip all TestCase stack frames:
+  assertNotContains('testcase.js', result.errors[0].toString());
+}
+
+function testTestCase_RepeatedFailure() {
+  var stubs = new goog.testing.PropertyReplacer();
+  // Prevent the mock from the inner test from forcibly failing the outer test.
+  stubs.replace(
+      goog.global, 'G_testRunner', null, true /* opt_allowNullOrUndefined */);
+
+  try {
+    var doneCount = 0;
+    var testCase = new goog.testing.TestCase();
+
+    testCase.setTestDoneCallback(function() {
+      doneCount++;
+    });
+
+    var mock = goog.testing.FunctionMock();
+    testCase.addNewTest(
+        'foo', function() {
+          mock(1).$once();
+          mock.$replay();
+          // This throws a bad-parameter exception immediately.
+          mock(2);
+        }, null, [{
+          // This throws the recorded exception again.
+          // Calling this in tearDown is a common pattern (eg, in Environment).
+          tearDown: goog.bind(mock.$verify, mock),
+        }]);
+    testCase.runTests();
+  } finally {
+    stubs.reset();
+  }
+  assertFalse(testCase.isSuccess());
+  var result = testCase.getResult();
+  assertTrue(result.complete);
+  assertEquals(1, result.totalCount);
+  assertEquals(1, result.runCount);
+  assertEquals(0, result.successCount);
+  assertEquals(1, result.errors.length);
+
+  assertEquals('testDone must be called exactly once.', 1, doneCount);
+
+  // Make sure we strip all TestCase stack frames:
+  assertNotContains('testcase.js', result.errors[0].toString());
+}
+
 function testTestCase_SyncFailure() {
   var testCase = new goog.testing.TestCase();
   testCase.addNewTest('foo', fail);
@@ -169,6 +261,9 @@ function testTestCase_SyncFailure() {
   assertEquals(0, result.successCount);
   assertEquals(1, result.errors.length);
   assertEquals('foo', result.errors[0].source);
+
+  // Make sure we strip all TestCase stack frames:
+  assertNotContains('testcase.js', result.errors[0].toString());
 }
 
 function testTestCaseReturningPromise_SyncFailure() {
@@ -182,6 +277,9 @@ function testTestCaseReturningPromise_SyncFailure() {
     assertEquals(0, result.successCount);
     assertEquals(1, result.errors.length);
     assertEquals('foo', result.errors[0].source);
+
+    // Make sure we strip all TestCase stack frames:
+    assertNotContains('testcase.js', result.errors[0].toString());
   });
 }
 
@@ -196,6 +294,9 @@ function testTestCaseReturningPromise_GoogPromiseReject() {
     assertEquals(0, result.successCount);
     assertEquals(1, result.errors.length);
     assertEquals('foo', result.errors[0].source);
+
+    // Make sure we strip all TestCase stack frames:
+    assertNotContains('testcase.js', result.errors[0].toString());
   });
 }
 
@@ -216,15 +317,16 @@ function testTestCaseReturningPromise_GoogPromiseTimeout() {
     assertEquals(0, result.successCount);
     assertEquals(1, result.errors.length);
     // Check that error message mentions test name.
-    assertTrue(goog.string.contains(result.errors[0].message, 'foo'));
+    assertContains('foo', result.errors[0].toString());
     // Check that error message mentions how to change timeout.
-    assertTrue(
-        goog.string.contains(
-            result.errors[0].message,
-            'goog.testing.TestCase.getActiveTestCase().promiseTimeout'));
-    assertTrue(
-        elapsedTime >= testCase.promiseTimeout - 100 &&
-        elapsedTime <= testCase.promiseTimeout + 100);
+    assertContains(
+        'goog.testing.TestCase.getActiveTestCase().promiseTimeout',
+        result.errors[0].toString());
+    if (!goog.userAgent.EDGE_OR_IE) {
+      assertTrue(
+          `Expected ${elapsedTime} to be >= ${testCase.promiseTimeout}.`,
+          elapsedTime >= testCase.promiseTimeout);
+    }
   });
 }
 
@@ -264,15 +366,16 @@ function testTestCaseReturningPromise_PromiseTimeout() {
     assertEquals(0, result.successCount);
     assertEquals(1, result.errors.length);
     // Check that error message mentions test name.
-    assertTrue(goog.string.contains(result.errors[0].message, 'foo'));
+    assertContains('foo', result.errors[0].toString());
     // Check that error message mentions how to change timeout.
-    assertTrue(
-        goog.string.contains(
-            result.errors[0].message,
-            'goog.testing.TestCase.getActiveTestCase().promiseTimeout'));
-    assertTrue(
-        elapsedTime >= testCase.promiseTimeout - 100 &&
-        elapsedTime <= testCase.promiseTimeout + 100);
+    assertContains(
+        'goog.testing.TestCase.getActiveTestCase().promiseTimeout',
+        result.errors[0].toString());
+    if (!goog.userAgent.EDGE_OR_IE) {
+      assertTrue(
+          `Expected ${elapsedTime} to be >= ${testCase.promiseTimeout}.`,
+          elapsedTime >= testCase.promiseTimeout);
+    }
   });
 }
 
@@ -316,6 +419,9 @@ function testTestCaseReturningPromise_GoogPromiseResolve_GoogPromiseReject() {
     assertEquals(1, result.successCount);
     assertEquals(1, result.errors.length);
     assertEquals('bar', result.errors[0].source);
+
+    // Make sure we strip all TestCase stack frames:
+    assertNotContains('testcase.js', result.errors[0].toString());
   });
 }
 
@@ -559,7 +665,7 @@ function testMaybeFailTestEarly() {
   assertFalse(testCase.isSuccess());
   var errors = testCase.getResult().errors;
   assertEquals(1, errors.length);
-  assertEquals(message, errors[0].message);
+  assertContains(message, errors[0].toString());
 }
 
 function testSetUpReturnsPromiseThatTimesOut() {
@@ -571,7 +677,7 @@ function testSetUpReturnsPromiseThatTimesOut() {
     assertFalse(testCase.isSuccess());
     assertTrue(result.complete);
     assertEquals(1, result.errors.length);
-    assertTrue(goog.string.contains(result.errors[0].message, 'setUp'));
+    assertContains('setUp', result.errors[0].toString());
   });
 }
 
@@ -584,7 +690,7 @@ function testTearDownReturnsPromiseThatTimesOut() {
     assertFalse(testCase.isSuccess());
     assertTrue(result.complete);
     assertEquals(1, result.errors.length);
-    assertTrue(goog.string.contains(result.errors[0].message, 'tearDown'));
+    assertContains('tearDown', result.errors[0].toString());
   });
 }
 
@@ -632,7 +738,7 @@ function verifyWithFlagDisabled(testFunction) {
 
   var promise = new goog
                     .Promise(function(resolve, reject) {
-                      testCase.setCompletedCallback(resolve);
+                      testCase.addCompletedCallback(resolve);
                     })
                     .then(function() {
                       assertTrue(testCase.isSuccess());
@@ -640,7 +746,9 @@ function verifyWithFlagDisabled(testFunction) {
                       assertTrue(result.complete);
                       assertEquals(0, result.errors.length);
                     })
-                    .thenAlways(function() { stubs.reset(); });
+                    .thenAlways(function() {
+                      stubs.reset();
+                    });
 
   testCase.runTests();
   return promise;
@@ -661,7 +769,7 @@ function verifyWithFlagEnabled(testFunction, shouldPassWithFlagEnabled) {
   var promise =
       new goog
           .Promise(function(resolve, reject) {
-            testCase.setCompletedCallback(resolve);
+            testCase.addCompletedCallback(resolve);
           })
           .then(function() {
             assertEquals(shouldPassWithFlagEnabled, testCase.isSuccess());
@@ -672,7 +780,9 @@ function verifyWithFlagEnabled(testFunction, shouldPassWithFlagEnabled) {
             assertEquals(
                 shouldPassWithFlagEnabled ? 0 : 2, result.errors.length);
           })
-          .thenAlways(function() { stubs.reset(); });
+          .thenAlways(function() {
+            stubs.reset();
+          });
 
   testCase.runTests();
   return promise;
@@ -695,7 +805,7 @@ function verifyWithFlagEnabledAndNoInvalidation(testFunction) {
 
   var promise = new goog
                     .Promise(function(resolve, reject) {
-                      testCase.setCompletedCallback(resolve);
+                      testCase.addCompletedCallback(resolve);
                     })
                     .then(function() {
                       assertFalse(testCase.isSuccess());
@@ -705,7 +815,9 @@ function verifyWithFlagEnabledAndNoInvalidation(testFunction) {
                       // failOnUnreportedAsserts error.
                       assertEquals(2, result.errors.length);
                     })
-                    .thenAlways(function() { stubs.reset(); });
+                    .thenAlways(function() {
+                      stubs.reset();
+                    });
 
   testCase.runTests();
   return promise;
@@ -785,7 +897,7 @@ function testFailOnUnreportedAsserts_ReportUnpropagatedAssertionExceptions() {
   var e1 = new goog.testing.JsUnitException('foo123');
   var e2 = new goog.testing.JsUnitException('bar456');
 
-  var mockRecordError = goog.testing.MethodMock(testCase, 'recordError_');
+  var mockRecordError = goog.testing.MethodMock(testCase, 'recordError');
   mockRecordError('test', e1);
   mockRecordError('test', e2);
   mockRecordError.$replay();
@@ -800,11 +912,80 @@ function testFailOnUnreportedAsserts_ReportUnpropagatedAssertionExceptions() {
   mockRecordError.$tearDown();
 }
 
+function testUnreportedAsserts_failedTest() {
+  var testCase = new goog.testing.TestCase();
+  testCase.addNewTest('testFailSync', function() {
+    try {
+      assertEquals('Obi-wan', 'Qui-gon');
+    } catch (e) {
+    }
+    assertEquals('Sidious', 'Palpatine');
+  });
+  testCase.addNewTest('testFailAsync', function() {
+    return goog.Promise.resolve().then(function() {
+      try {
+        assertEquals('Kirk', 'Spock');
+      } catch (e) {
+      }
+      assertEquals('Uhura', 'Scotty');
+    });
+  });
+  testCase.addNewTest('testJustOneFailure', function() {
+    return goog.Promise.resolve().then(function() {
+      assertEquals('R2D2', 'C3PO');
+    });
+  });
+
+  var stubs = new goog.testing.PropertyReplacer();
+  var getTestCase = goog.functions.constant(testCase);
+  stubs.replace(window, '_getCurrentTestCase', getTestCase);
+
+  stubs.replace(goog.testing.TestCase, 'getActiveTestCase', getTestCase);
+  return testCase.runTestsReturningPromise()
+      .then(function() {
+        var errors = testCase.getResult().errors.map(function(e) {
+          return e.message;
+        });
+
+        assertArrayEquals(
+            [
+              // Sync:
+              'Expected <Obi-wan> (String) but was <Qui-gon> (String)',
+              'Expected <Sidious> (String) but was <Palpatine> (String)',
+              // Async:
+              'Expected <Kirk> (String) but was <Spock> (String)',
+              'Expected <Uhura> (String) but was <Scotty> (String)',
+              // JustOneFailure:
+              'Expected <R2D2> (String) but was <C3PO> (String)',
+            ],
+            errors);
+
+        var extraLogMessages =
+            testCase.getResult().messages.filter(function(m) {
+              return goog.string.contains(
+                  m, '1 additional exceptions were swallowed by the test');
+            });
+        assertEquals(
+            'Expect an additional-exception warning only for the two tests ' +
+                'that swallowed an exception.',
+            2, extraLogMessages.length);
+      })
+      .thenAlways(function() {
+        stubs.reset();
+      });
+}
+
 
 function testSetObj() {
   var testCase = new goog.testing.TestCase();
   assertEquals(0, testCase.getCount());
   testCase.setTestObj({testOk: ok, somethingElse: fail});
+  assertEquals(1, testCase.getCount());
+  // Make sure test count doesn't change after initializeTestCase
+  // TODO(goktug): Remove suppression when the verification is removed.
+  var suppressEnsureNoAutoDiscovery = true;
+  goog.testing.TestCase.initializeTestCase(
+      testCase, undefined, suppressEnsureNoAutoDiscovery);
   assertEquals(1, testCase.getCount());
 }
 

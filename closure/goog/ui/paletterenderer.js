@@ -35,6 +35,8 @@ goog.require('goog.style');
 goog.require('goog.ui.ControlRenderer');
 goog.require('goog.userAgent');
 
+goog.forwardDeclare('goog.ui.Palette');
+
 
 
 /**
@@ -335,8 +337,8 @@ goog.ui.PaletteRenderer.prototype.highlightCell = function(
     goog.asserts.assert(cell);
     goog.dom.classlist.enable(
         cell, goog.getCssName(this.getCssClass(), 'cell-hover'), highlight);
-    // See http://www.w3.org/TR/2006/WD-aria-state-20061220/#activedescendent
-    // for an explanation of the activedescendent.
+    // See https://www.w3.org/TR/wai-aria/#aria-activedescendant
+    // for an explanation of the activedescendant.
     if (highlight) {
       goog.a11y.aria.setState(
           palette.getElementStrict(), goog.a11y.aria.State.ACTIVEDESCENDANT,

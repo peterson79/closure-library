@@ -16,7 +16,7 @@
  * @fileoverview Ordinal rules.
  *
  *
- * File generated from CLDR ver. 32
+ * File generated from CLDR ver. 33
  *
  * Before check in, this file could have been manually edited. This is to
  * incorporate changes before we could fix CLDR. All manual modification must be
@@ -81,7 +81,7 @@ goog.i18n.ordinalRules.decimals_ = function(n) {
  *     (https://unicode.org/reports/tr35/tr35-numbers.html#Plural_rules_syntax)
  * @param {number} n The count of items.
  * @param {number=} opt_precision optional, precision.
- * @return {!{v:number, f:number}} The v and f.
+ * @return {{v:number, f:number}} The v and f.
  * @private
  */
 goog.i18n.ordinalRules.get_vf_ = function(n, opt_precision) {
@@ -105,7 +105,7 @@ goog.i18n.ordinalRules.get_vf_ = function(n, opt_precision) {
  *     (https://unicode.org/reports/tr35/tr35-numbers.html#Plural_rules_syntax)
  * @param {number} v Calculated previously.
  * @param {number} f Calculated previously.
- * @return {!{w:number, t:number}} The w and t.
+ * @return {{w:number, t:number}} The w and t.
  * @private
  */
 goog.i18n.ordinalRules.get_wt_ = function(v, f) {
@@ -513,6 +513,9 @@ if (goog.LOCALE == 'ar') {
   goog.i18n.ordinalRules.select = goog.i18n.ordinalRules.defaultSelect_;
 }
 if (goog.LOCALE == 'ar_DZ' || goog.LOCALE == 'ar-DZ') {
+  goog.i18n.ordinalRules.select = goog.i18n.ordinalRules.defaultSelect_;
+}
+if (goog.LOCALE == 'ar_EG' || goog.LOCALE == 'ar-EG') {
   goog.i18n.ordinalRules.select = goog.i18n.ordinalRules.defaultSelect_;
 }
 if (goog.LOCALE == 'az') {

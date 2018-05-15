@@ -40,6 +40,8 @@ goog.define('goog.debug.FORCE_SLOPPY_STACKS', false);
  * @param {boolean=} opt_cancel Whether to stop the error from reaching the
  *    browser.
  * @param {Object=} opt_target Object that fires onerror events.
+ * @suppress {strictMissingProperties} onerror is not defined as a property
+ *    on Object.
  */
 goog.debug.catchErrors = function(logFunc, opt_cancel, opt_target) {
   var target = opt_target || goog.global;
@@ -231,7 +233,7 @@ goog.debug.exposeArray = function(arr) {
 /**
  * Normalizes the error/exception object between browsers.
  * @param {*} err Raw error object.
- * @return {!{
+ * @return {{
  *    message: (?|undefined),
  *    name: (?|undefined),
  *    lineNumber: (?|undefined),

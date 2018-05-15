@@ -118,6 +118,25 @@ function testAssertNull() {
   }, 'Expected <null> but was <1> (Number)');
 }
 
+function testAssertNullOrUndefined() {
+  assertNullOrUndefined(null);
+  assertNullOrUndefined(undefined);
+  assertNullOrUndefined('Good assertion', null);
+  assertNullOrUndefined('Good assertion', undefined);
+  assertThrowsJsUnitException(function() {
+    assertNullOrUndefined(true);
+  }, 'Expected <null> or <undefined> but was <true> (Boolean)');
+  assertThrowsJsUnitException(
+      function() {
+        assertNullOrUndefined('Should be null', false);
+      },
+      'Should be null\n' +
+          'Expected <null> or <undefined> but was <false> (Boolean)');
+  assertThrowsJsUnitException(function() {
+    assertNullOrUndefined(0);
+  }, 'Expected <null> or <undefined> but was <0> (Number)');
+}
+
 function testAssertNotNull() {
   assertNotNull(true);
   assertNotNull('Good assertion', true);
@@ -481,6 +500,33 @@ function testAssertObjectEqualsSparseArrays2() {
   }
 }
 
+function testAssertObjectEqualsNestedPropertyMessage() {
+  assertThrowsJsUnitException(function() {
+    assertObjectEquals(
+        {a: 'abc', b: 4, array: [1, 2, 3, {nested: [2, 3, 4]}]},
+        {a: 'bcd', b: '4', array: [1, 5, 3, {nested: [2, 3, 4, 5]}]});
+  }, `Expected <[object Object]> (Object) but was <[object Object]> (Object)
+   a: Expected <abc> (String) but was <bcd> (String)
+   b: Expected <4> (Number) but was <4> (String)
+   array[1]: Expected <2> (Number) but was <5> (Number)
+   array[3].nested: Expected 3-element array but got a 4-element array`);
+}
+
+function testAssertObjectEqualsRootDifference() {
+  assertThrowsJsUnitException(function() {
+    assertObjectEquals([1], [1, 2]);
+  }, `Expected <1> (Array) but was <1,2> (Array)
+   Expected 1-element array but got a 2-element array`);
+
+  assertThrowsJsUnitException(function() {
+    assertObjectEquals('a', 'b');
+  }, 'Expected <a> (String) but was <b> (String)');
+
+  assertThrowsJsUnitException(function() {
+    assertObjectEquals([], {});
+  }, 'Expected <> (Array) but was <[object Object]> (Object)');
+}
+
 function testAssertObjectEqualsArraysWithExtraProps() {
   var arr1 = [1];
   var arr2 = [1];
@@ -604,7 +650,7 @@ function testAssertHashEquals() {
     assertHashEquals('Should match', {a: 1}, {a: 5});
   }, 'Should match\nValue for key a mismatch - expected = 1, actual = 5');
   assertThrowsJsUnitException(function() {
-    assertHashEquals({a: undefined}, {a: 1})
+    assertHashEquals({a: undefined}, {a: 1});
   }, 'Value for key a mismatch - expected = undefined, actual = 1');
   // Extra key.
   assertThrowsJsUnitException(function() {
@@ -629,7 +675,6 @@ function testAssertRoughlyEquals() {
 }
 
 function testAssertContains() {
-  var a = [1, 2, 3];
   assertContains(1, [1, 2, 3]);
   assertContains('Should contain', 1, [1, 2, 3]);
   assertThrowsJsUnitException(function() {
@@ -647,7 +692,6 @@ function testAssertContains() {
 }
 
 function testAssertNotContains() {
-  var a = [1, 2, 3];
   assertNotContains(4, [1, 2, 3]);
   assertNotContains('Should not contain', 4, [1, 2, 3]);
   assertThrowsJsUnitException(function() {
@@ -916,7 +960,6 @@ function testAssertObjectsEqualsDifferentArrays() {
 }
 
 function testAssertObjectsEqualsNegativeArrayIndexes() {
-  var a1 = [0];
   var a2 = [0];
   a2[-1] = -1;
   // The following test fails unexpectedly. The bug is tracked at
@@ -965,7 +1008,10 @@ function testAssertObjectRoughlyEqualsWithStrings() {
       },
       'Expected <[object Object]> (Object)' +
           ' but was <[object Object]> (Object)' +
-          '\n   description[0].colName: Expected String "x1" but got "x2"');
+          '\n   description[0].colName: Expected <x1> (String) but was <x2> (String)');
+  assertThrowsJsUnitException(function() {
+    assertObjectRoughlyEquals('x1', 'x2', 0.00001);
+  }, 'Expected <x1> (String) but was <x2> (String)');
 }
 
 function testFindDifferences_equal() {
